@@ -3,7 +3,45 @@
 export SELF=$(readlink -f "${0}")
 export HERE=$(dirname  "${SELF}")
 
-. /usr/lib/tiger-os/tiger-osd.sh
+function message() {
+   local undecorated="--undecorated"
+   [ "${TIGER_DIALOG_SHOW_TITLE}" = "1" ] && undecorated=""
+
+   local autoclose="--close-on-unfocus"
+   [ "${TIGER_DIALOG_AUTOCLOSE}" = "0" ] && autoclose=""
+
+   local icon=""
+   [ ! -z "${3}" ] && icon="--image=${3}"
+
+   local window_icon="--window-icon=dialog-messages"
+   [ ! -z "${3}" ] && window_icon="--window-icon=${3}"
+   
+   local buttons="--button=gtk-ok:0"
+   [ "${4}" = "yes-no"    ] && buttons="--button=Sim:1 --button=Não:0"
+   [ "${4}" = "no-yes"    ] && buttons="--button=Não:0 --button=Sim:1"
+   [ "${4}" = "cancel-ok" ] && buttons=""
+   [ "${4}" = "close"     ] && buttons="--button=Fechar:0 "
+   [ "${4}" = "ok"        ] && buttons="--button=Ok:0 "
+   [ "${4}" = "cancel"    ] && buttons="--button=Cancelar:0 "
+   [ "${4}" = "none"      ] && {
+     buttons="--no-buttons"
+     [ ! "${TIGER_DIALOG_SHOW_TITLE}" = "1" ] && {
+       autoclose="--close-on-unfocus"
+     }
+   }
+
+   yad --center --borders=32 --width=400 "${window_icon}" --title="${TIGER_DIALOG_TITLE}" ${undecorated} --fixed "${icon}" ${autoclose} \
+       --text="<big><b>${1}</b></big>\n${2}" --form ${field} --field=" ":lbl --separator="" ${buttons} --image-on-top
+
+   return ${?}
+}
+
+function show-message()      { message "${1}" "${2}" ""                "ok"     ; return ${?}; }
+function show-warning()      { message "${1}" "${2}" "dialog-warning"  "ok"     ; return ${?}; }
+function show-error()        { message "${1}" "${2}" "dialog-error"    "close"  ; exit   ${?}; }
+function ask()               { message "${1}" "${2}" "dialog-question" "no-yes" ; return ${?}; }
+
+#-------------------------------------------------------------------------------------------------
 
 unset APP_OVERRIDE_NAME
 
@@ -65,7 +103,6 @@ function filter_flatpak_install() {
         line="${BASH_REMATCH[1]}"
 
         if (( line > last_great_value )); then
-            echo "1:${line}"
             last_great_value=$line
         fi
 
@@ -76,7 +113,7 @@ function filter_flatpak_install() {
         fi
 
 
-        echo "2:${progress}"
+        echo "1:${progress}"
 
         if (( line == 100 )); then
             last_great_value=0
@@ -84,6 +121,7 @@ function filter_flatpak_install() {
         fi
     fi
   done
+  echo "1:100"
   echo "2:100"
 }
 
@@ -175,19 +213,24 @@ app_name=$(grep "^${url}" "${XDG_CACHE_DIR}/flatpak_cache.list" | cut -d\| -f2)
   app_name="${APP_OVERRIDE_NAME}"
 }
 
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.freedesktop.Platform.GL.default$|Driver de vídeo para a Sandbox|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.freedesktop.Platform.VAAPI.Intel$|Driver Intel VAAPI para a Sandbox|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.kde.Platform$|Bibliotecas do projeto KDE|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.gnome.Platform$|Bibliotecas do projeto GNOME|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.freedesktop.Platform$|Bibliotecas do projeto FreeDesktop|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.elementary.Platform$|Bibliotecas do projeto elementary OS|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.kde.Platform.Locale$|Traduções do KDE para ${LANG::-6}|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.freedesktop.Platform.openh264$|Codec h264 para Sandbox|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|^org.gtk.Gtk3theme.*|Tema do sistema para a Sandbox|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|${installed_package}.Locale|Traduções do aplicativo para ${LANG::-6}|"
-humanified_dependencies_replaces="${humanified_dependencies_replaces};s|${installed_package}|O aplicativo|"
 
-dependencies_list=$(echo -n "${dependencies}" | sed "${humanified_dependencies_replaces}" | sed "s|^|    •   |g")
+humanified_dependencies_replaces=(
+  "  s|^org.freedesktop.Platform.GL.default$|Driver de vídeo para a Sandbox|"
+  "  s|^org.freedesktop.Platform.VAAPI.Intel$|Driver Intel VAAPI para a Sandbox|"
+  "  s|^org.kde.Platform$|Bibliotecas do projeto KDE|"
+  "  s|^org.gnome.Platform$|Bibliotecas do projeto GNOME|"
+  "  s|^org.freedesktop.Platform$|Bibliotecas do projeto FreeDesktop|"
+  "  s|^org.freedesktop.Platform.Locale|Traduções do FreeDesktop para ${LANG::-6}|"
+  "  s|^org.freedesktop.Platform.codecs-extra|Codificadores de áudio e vídeo|"
+  "  s|^org.elementary.Platform$|Bibliotecas do projeto elementary OS|"
+  "  s|^org.kde.Platform.Locale$|Traduções do KDE para ${LANG::-6}|"
+  "  s|^org.freedesktop.Platform.openh264$|Codec h264 para Sandbox|"
+  "  s|^org.gtk.Gtk3theme.*|Tema do sistema para a Sandbox|"
+  "  s|${installed_package}.Locale|Traduções do aplicativo para ${LANG::-6}|"
+  "  s|${installed_package}|O aplicativo|"
+)
+
+dependencies_list=$(echo -n "${dependencies}" | sed "${humanified_dependencies_replaces[@]/#/-e }" | uniq | sed "s|^|    •   |g")
 
 ask "Bem-vindo(a) a instalação do ${app_name}" "\nOs seguintes pacotes e recursos precisam ser instalados ou atualizados na Sandbox: \n\n${dependencies_list}\n\nDeseja prosseguir com a instalação?"
 
@@ -196,11 +239,10 @@ ask "Bem-vindo(a) a instalação do ${app_name}" "\nOs seguintes pacotes e recur
 }
 
 "${SELF}" --do-install "${url}" | {
-  yad --multi-progress --bar="Pacote atual ":NORM --bar="Progresso geral   ":NORM --center --borders=32 --width=480  --text="<big><b>Instalando ${app_name}...</b></big>\n" --skip-taskbar --auto-close --hide-text --window-icon=dialog-messages --fixed --title="${TIGER_DIALOG_TITLE}" --button=gtk-cancel:1
-
-  kill $(ps -ax | grep "flatpak install "${url}" --no-static-deltas-y" | grep -Ev "grep" | tr -s '[[:space:]]' | cut -d' ' -f2) 2> /dev/null
-
-  exit
+  yad --multi-progress --bar=" ":NORM  --center --borders=32 --width=480  --text="<big><b>Instalando ${app_name}...</b></big>\n" --skip-taskbar --auto-close --hide-text --window-icon=dialog-messages --fixed --title="${TIGER_DIALOG_TITLE}" --button="Cancelar":1 || {
+    kill $(ps -ax | grep "flatpak install "${url}" --no-static-deltas-y" | grep -Ev "grep" | tr -s '[[:space:]]' | cut -d' ' -f2) 2> /dev/null
+    
+  }
 }
 
 unset TIGER_DIALOG_SHOW_TITLE
