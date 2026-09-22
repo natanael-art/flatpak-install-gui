@@ -60,30 +60,29 @@ function filter_flatpak_install() {
 
   export last_great_value=0
 
-  flatpak install ${url} --no-static-deltas -y | while IFS= read -r line; do
-    raw_line="${line}"
-    line=$(echo "${line}" | grep ^"Instal" | grep -o "...%" | grep -o "[0-9]\+")
+  flatpak install "${url}" --no-static-deltas -y 2>&1 | while IFS= read -r raw_line; do
+    if [[ "$raw_line" =~ ([0-9]{1,3})% ]]; then
+        line="${BASH_REMATCH[1]}"
 
-    [ ! -z "${line}" ] && {
-      [ ${line} -gt ${last_great_value} ] && {
-        echo "1:${line}"
-        last_great_value=${line}
-      }
-      [ "${line}" == "100" ] && {
-        last_great_value=0
-        general_progress=$((${general_progress}+1))
-      }
+        if (( line > last_great_value )); then
+            echo "1:${line}"
+            last_great_value=$line
+        fi
 
-      progress=$((${general_progress}*${progress_block}))
+        progress=$((general_progress * progress_block + line * progress_block / 100))
 
-      [ ${progress} -eq 100 ] && {
-        progress=101
-      }
+        if (( progress >= 100 )); then
+            progress=99
+        fi
 
-      echo "${raw_line}" > /dev/stderr
 
-      echo "2:${progress}"
-    }
+        echo "2:${progress}"
+
+        if (( line == 100 )); then
+            last_great_value=0
+            ((general_progress++))
+        fi
+    fi
   done
   echo "2:100"
 }
